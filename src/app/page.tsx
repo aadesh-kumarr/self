@@ -1,61 +1,59 @@
 "use client";
-import Textbox from "./types";
-import { MouseEvent, useRef, useState } from "react";
 
-export default function Text_Editor() {
+import Textbox from "./types";
+import { MouseEvent, useRef, useState, useMemo } from "react";
+
+export default function TextEditor() {
   const [textBoxes, setTextBoxes] = useState<Textbox[]>([]);
-  const [activeboxID, setActivebox] = useState<number | null>(null);
-  const [draggedboxID, setDraggedboxID] = useState<number | null>(null);
-  const [initalPosition, setInitialPosition] = useState<{
+  const [activeBoxID, setActiveBoxID] = useState<number | null>(null);
+  const [draggedBoxID, setDraggedBoxID] = useState<number | null>(null);
+  const [initialPosition, setInitialPosition] = useState<{
     x: number;
     y: number;
   } | null>(null);
-  const activeBox = textBoxes.find((box) => box.id === activeboxID);
 
-  const undostack = useRef<Textbox[][]>([]);
+  const undoStack = useRef<Textbox[][]>([]);
   const redoStack = useRef<Textbox[][]>([]);
 
+  const activeBox = useMemo(
+    () => textBoxes.find((box) => box.id === activeBoxID) || null,
+    [textBoxes, activeBoxID]
+  );
+
+  const saveToUndo = (textBox: Textbox[] = textBoxes) => {
+    // console.log(undoStack.current.length);
+    undoStack.current.push([...textBox]);
+  };
+
   const undo = () => {
-    console.log(undostack.current.length)
-    
-    if (undostack.current.length > 0) {
-      const previous = undostack.current.pop()!;
+    if (undoStack.current.length > 0) {
+      const nextState = undoStack.current.pop()!;
       redoStack.current.push([...textBoxes]);
-      setTextBoxes(previous);
-      console.log(undostack.current.length)
+      setTextBoxes(nextState);
     }
+  };
+
+  const undoHandler = () => {
+    undo();
+    undo();
   };
 
   const redo = () => {
     if (redoStack.current.length > 0) {
-      const next = redoStack.current.pop()!;
-      undostack.current.push([...textBoxes]);
-      setTextBoxes(next);
+      const nextState = redoStack.current.pop()!;
+      saveToUndo([...textBoxes]);
+      setTextBoxes(nextState);
     }
   };
 
-  const saveToUndo = () => {
-    console.log("undo stack", undostack);
-    console.log(redoStack);
-    undostack.current.push([...textBoxes]);
-    redoStack.current = [];
-
-  };
+  if (undoStack.current.length === 0) saveToUndo([...textBoxes]);
 
   const addBox = () => {
-    if(undostack.current.length===0){
-      console.log(undostack.current.length)
-      saveToUndo();
-    }
-    console.log(undostack.current.length)
-    console.log("add box");
-    
-    // Create the new box
     const newBox: Textbox = {
       id: Date.now(),
       x: 50,
       y: 50,
-      content: "new box",
+      content: "New box",
       fontSize: 16,
       fontFamily: "Arial",
       bold: false,
@@ -63,33 +61,22 @@ export default function Text_Editor() {
       underline: false,
       alignment: "Left",
     };
-    
-    // Update the state and save it to the undo stack in one step
+
     setTextBoxes((prev) => {
-      const updatedBoxes = [...prev, newBox];
-      undostack.current.push(updatedBoxes);
-      redoStack.current = []; // Clear redo stack as a new change has occurred
-      console.log(undostack.current.length)
-      return updatedBoxes;
+      const updated = [...prev, newBox];
+      saveToUndo(updated);
+      redoStack.current = [];
+      return updated;
     });
+
+    setActiveBoxID(newBox.id);
   };
-  
 
   const updateTextBox = (id: number, changes: Partial<Textbox>) => {
     setTextBoxes((prev) =>
       prev.map((box) => (box.id === id ? { ...box, ...changes } : box))
     );
-    saveToUndo();
-  };
-
-  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
-    if (draggedboxID !== null) {
-      const canvas = document.getElementById("canvas")!;
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      updatePosition(draggedboxID, x, y);
-    }
+    saveToUndo([...textBoxes]);
   };
 
   const updatePosition = (id: number, x: number, y: number) => {
@@ -98,27 +85,35 @@ export default function Text_Editor() {
     );
   };
 
+  const handleMouseDown = (e: MouseEvent<HTMLDivElement>, id: number) => {
+    e.stopPropagation();
+    setActiveBoxID(id);
+    setDraggedBoxID(id);
+
+    const box = textBoxes.find((box) => box.id === id);
+    if (box) setInitialPosition({ x: box.x, y: box.y });
+  };
+
+  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
+    if (draggedBoxID !== null) {
+      const canvas = document.getElementById("canvas")!;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      updatePosition(draggedBoxID, x, y);
+    }
+  };
+
   const handleMouseUp = () => {
-    if (initalPosition && draggedboxID !== null) {
-      const box = textBoxes.find((box) => box.id === draggedboxID);
-      if (box && (box.x !== initalPosition.x || box.y !== initalPosition.y)) {
-        saveToUndo();
+    if (initialPosition && draggedBoxID !== null) {
+      const box = textBoxes.find((box) => box.id === draggedBoxID);
+      if (box && (box.x !== initialPosition.x || box.y !== initialPosition.y)) {
+        saveToUndo([...textBoxes]);
       }
     }
 
-    setDraggedboxID(null);
+    setDraggedBoxID(null);
     setInitialPosition(null);
-  };
-
-  const handleMouseDown = (e: MouseEvent<HTMLDivElement>, id: number) => {
-    e.stopPropagation();
-    setActivebox(id);
-    setDraggedboxID(id);
-
-    const box = textBoxes.find((box) => box.id === id);
-    if (box) {
-      setInitialPosition({ x: box.x, y: box.y });
-    }
   };
 
   return (
@@ -128,30 +123,26 @@ export default function Text_Editor() {
       onMouseUp={handleMouseUp}
     >
       <div className="bg-white h-[100dvh] w-[100dvw]">
-        <div className="h-[10dvh] text-lg content-center" id="upper">
-          <div className="flex flex-row justify-center gap-4 " id="container">
-            <button className="flex flex-col buttons">
-              <p onClick={undo}>Undo</p>
-              <p></p>
-            </button>
-            <button className="flex flex-col buttons">
-              <p onClick={redo}>Redo</p>
-              <p></p>
-            </button>
-          </div>
-        </div>
+        <header className="h-[10dvh] flex justify-center gap-4">
+          <button className="buttons" onClick={undoHandler}>
+            Undo
+          </button>
+          <button className="buttons" onClick={redo}>
+            Redo
+          </button>
+        </header>
 
-        <div className="bg-slate-200 h-[80dvh] content-center" id="mid">
+        <main className="bg-slate-200 h-[80dvh]">
           <div
-            className="bg-white h-[75dvh] w-[80dvh] mx-auto rounded relative"
             id="canvas"
-            onMouseDown={() => setActivebox(null)}
+            className="bg-white h-[75dvh] w-[80dvw] mx-auto rounded relative"
+            onMouseDown={() => setActiveBoxID(null)}
           >
             {textBoxes.map((box) => (
               <div
                 key={box.id}
                 className={`absolute p-2 rounded border ${
-                  activeboxID === box.id
+                  activeBoxID === box.id
                     ? "border-blue-500"
                     : "border-transparent"
                 }`}
@@ -165,30 +156,26 @@ export default function Text_Editor() {
                   fontFamily: box.fontFamily,
                   textAlign:
                     box.alignment.toLowerCase() as React.CSSProperties["textAlign"],
-                  border: activeboxID === box.id ? "1px solid blue" : "none",
-                  padding: "4px",
                 }}
-                contentEditable={activeboxID === box.id}
+                contentEditable={activeBoxID === box.id}
                 suppressContentEditableWarning
                 onMouseDown={(e) => handleMouseDown(e, box.id)}
-                onInput={(e) => {
-                  updateTextBox(box.id, {
-                    content: (e.target as HTMLDivElement).ariaValueText || "",
-                  });
-                }}
+                onBlur={() => setActiveBoxID(null)}
+                onInput={(e) =>
+                  updateTextBox(box.id, { content: e.currentTarget.innerText })
+                }
               >
                 {box.content}
               </div>
             ))}
           </div>
-        </div>
+        </main>
 
-        <div className="flex justify-center gap-5 h-[10dvh]" id="lower">
+        <footer className="flex justify-center gap-5 h-[10dvh]">
           <select
             className="buttons"
-            title="Select Font"
-            id=""
             onChange={(e) =>
+              activeBox &&
               updateTextBox(activeBox.id, { fontFamily: e.target.value })
             }
           >
@@ -203,8 +190,9 @@ export default function Text_Editor() {
             className="buttons"
             min={8}
             max={72}
-            value={activeBox?.fontSize}
+            value={activeBox?.fontSize || 16}
             onChange={(e) =>
+              activeBox &&
               updateTextBox(activeBox.id, {
                 fontSize: parseInt(e.target.value, 10),
               })
@@ -212,41 +200,36 @@ export default function Text_Editor() {
           />
 
           <button
+            className={`buttons ${activeBox?.bold ? "bg-slate-400" : ""}`}
             onClick={() =>
-              updateTextBox(activeBox.id, { bold: !activeBox?.bold })
+              activeBox &&
+              updateTextBox(activeBox.id, { bold: !activeBox.bold })
             }
-            className={`buttons ${
-              activeBox?.bold ? "bg-slate-400" : "hover:bg-slate-300+"
-            }`}
           >
             B
           </button>
-
           <button
+            className={`buttons ${activeBox?.italic ? "bg-slate-400" : ""}`}
             onClick={() =>
-              updateTextBox(activeBox.id, { italic: !activeBox?.italic })
+              activeBox &&
+              updateTextBox(activeBox.id, { italic: !activeBox.italic })
             }
-            className={`buttons ${
-              activeBox?.italic ? "bg-slate-400" : "hover:bg-slate-300+"
-            }`}
           >
             I
           </button>
           <button
+            className={`buttons ${activeBox?.underline ? "bg-slate-400" : ""}`}
             onClick={() =>
-              updateTextBox(activeBox.id, { underline: !activeBox?.underline })
+              activeBox &&
+              updateTextBox(activeBox.id, { underline: !activeBox.underline })
             }
-            className={`buttons ${
-              activeBox?.underline ? "bg-slate-400" : "hover:bg-slate-300+"
-            }`}
           >
             U
           </button>
-
           <button className="buttons bg-blue-500 text-white" onClick={addBox}>
             + Add text box
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   );
